@@ -1,0 +1,44 @@
+# ============================================================
+# prometheus.yml
+# Prometheus Konfiguration für Homelab Monitoring Stack
+#
+# Platzhalter vor Verwendung ersetzen:
+#   <wazuh-vm-ip>      — IP der Wazuh VM
+#   <tailscale-vm-ip>  — IP der Tailscale VM
+#   <proxmox-host-ip>  — IP des Proxmox Hosts
+# ============================================================
+
+global:
+  scrape_interval: 15s       # Wie oft Metriken abgerufen werden
+  evaluation_interval: 15s   # Wie oft Alerting-Regeln ausgewertet werden
+
+scrape_configs:
+
+  # Prometheus überwacht sich selbst
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # node_exporter auf der Wazuh VM
+  - job_name: 'node_wazuh'
+    static_configs:
+      - targets: ['<wazuh-vm-ip>:9100']
+
+  # node_exporter auf der Tailscale VM
+  - job_name: 'node_tailscale'
+    static_configs:
+      - targets: ['<tailscale-vm-ip>:9100']
+
+  # pve_exporter — Proxmox Host Metriken
+  - job_name: 'pve'
+    static_configs:
+      - targets: ['localhost:9221']
+    params:
+      target: ['<proxmox-host-ip>']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: localhost:9221
