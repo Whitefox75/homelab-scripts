@@ -2,11 +2,20 @@
 # ============================================================
 # wazuh_agent_deploy.sh
 # Installiert und registriert einen Wazuh Agent auf Debian/Ubuntu
-# Verwendung: bash wazuh_agent_deploy.sh
-# Umgebungsvariablen (optional):
-#   WAZUH_MANAGER_IP    — IP-Adresse des Wazuh Managers
-#   WAZUH_AGENT_NAME    — Name des Agents (Standard: Hostname)
-#   WAZUH_VERSION       — Wazuh Version (Standard: 4.x aktuell)
+#
+# Verwendung:
+#   bash wazuh_agent_deploy.sh [OPTIONEN]
+#
+# Optionen:
+#   -m, --manager-ip IP     IP-Adresse des Wazuh Managers
+#   -n, --name NAME         Name des Agents (Standard: Hostname)
+#   -v, --version VERSION   Wazuh Version (Standard: 4.14.3)
+#   --help                  Diese Hilfe anzeigen
+#
+# Umgebungsvariablen (alternativ zu Optionen):
+#   WAZUH_MANAGER_IP        IP-Adresse des Wazuh Managers
+#   WAZUH_AGENT_NAME        Name des Agents
+#   WAZUH_VERSION           Wazuh Version
 # ============================================================
 
 set -e
@@ -23,6 +32,33 @@ warning() { echo -e "${YELLOW}[!]${NC} $1"; }
 error()   { echo -e "${RED}[FEHLER]${NC} $1"; exit 1; }
 prompt()  { echo -e "${CYAN}[?]${NC} $1"; }
 
+# ── Hilfe ────────────────────────────────────────────────────
+usage() {
+  grep '^#' "$0" | grep -v '^#!/' | sed 's/^# \{0,1\}//'
+  exit 0
+}
+
+# ── Standardwerte ────────────────────────────────────────────
+WAZUH_MANAGER_IP="${WAZUH_MANAGER_IP:-}"
+WAZUH_AGENT_NAME="${WAZUH_AGENT_NAME:-}"
+WAZUH_VERSION="${WAZUH_VERSION:-}"
+
+# ── Argumente parsen ─────────────────────────────────────────
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -m|--manager-ip)
+      WAZUH_MANAGER_IP="$2"; shift 2 ;;
+    -n|--name)
+      WAZUH_AGENT_NAME="$2"; shift 2 ;;
+    -v|--version)
+      WAZUH_VERSION="$2"; shift 2 ;;
+    --help)
+      usage ;;
+    *)
+      error "Unbekanntes Argument: $1 — Nutze --help für Hilfe." ;;
+  esac
+done
+
 # ── Root-Prüfung ─────────────────────────────────────────────
 if [ "$EUID" -ne 0 ]; then
   error "Dieses Skript muss als root ausgeführt werden (sudo bash $0)"
@@ -35,15 +71,16 @@ for cmd in curl systemctl; do
   fi
 done
 
-# ── Eingaben abfragen ────────────────────────────────────────
+# ── Header ───────────────────────────────────────────────────
 echo ""
 echo "============================================"
 echo "   Wazuh Agent Installer"
 echo "============================================"
 echo ""
 
+# ── Interaktive Abfragen (falls Parameter fehlen) ────────────
+
 # Manager IP
-WAZUH_MANAGER_IP="${WAZUH_MANAGER_IP:-}"
 if [ -z "$WAZUH_MANAGER_IP" ]; then
   prompt "Wazuh Manager IP-Adresse eingeben:"
   read -rp "  > " WAZUH_MANAGER_IP
@@ -53,7 +90,6 @@ if [ -z "$WAZUH_MANAGER_IP" ]; then
 fi
 
 # Agent Name
-WAZUH_AGENT_NAME="${WAZUH_AGENT_NAME:-}"
 if [ -z "$WAZUH_AGENT_NAME" ]; then
   DEFAULT_NAME=$(hostname)
   prompt "Agent Name eingeben [Standard: $DEFAULT_NAME]:"
@@ -62,7 +98,6 @@ if [ -z "$WAZUH_AGENT_NAME" ]; then
 fi
 
 # Wazuh Version
-WAZUH_VERSION="${WAZUH_VERSION:-}"
 if [ -z "$WAZUH_VERSION" ]; then
   prompt "Wazuh Version eingeben [Standard: 4.14.3]:"
   read -rp "  > " WAZUH_VERSION
@@ -96,11 +131,9 @@ info "Architektur: $ARCH_LABEL"
 # ── Wazuh Repository einrichten ──────────────────────────────
 info "Richte Wazuh Repository ein..."
 
-# GPG Key importieren
 curl -s https://packages.wazuh.com/key/GPG-KEY-WAZUH \
   | gpg --dearmor -o /usr/share/keyrings/wazuh.gpg
 
-# Repository hinzufügen
 echo "deb [signed-by=/usr/share/keyrings/wazuh.gpg] https://packages.wazuh.com/4.x/apt/ stable main" \
   > /etc/apt/sources.list.d/wazuh.list
 
@@ -121,7 +154,6 @@ info "Wazuh Agent installiert"
 info "Konfiguriere Agent..."
 OSSEC_CONF="/var/ossec/etc/ossec.conf"
 
-# Manager IP in Konfiguration setzen
 if [ -f "$OSSEC_CONF" ]; then
   sed -i "s|<address>.*</address>|<address>${WAZUH_MANAGER_IP}</address>|g" "$OSSEC_CONF"
   info "Manager IP in ossec.conf gesetzt: $WAZUH_MANAGER_IP"
@@ -129,7 +161,6 @@ else
   error "ossec.conf nicht gefunden unter $OSSEC_CONF"
 fi
 
-# Agent Name setzen
 sed -i "s|<agent_name>.*</agent_name>|<agent_name>${WAZUH_AGENT_NAME}</agent_name>|g" "$OSSEC_CONF" 2>/dev/null || true
 
 # ── Service aktivieren ───────────────────────────────────────
